@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <link rel="stylesheet" type="text/css" href="/static/webuploader.css">
+    <script src="/static/angular.js"></script>
+    <script src="/static/jquery.min.js"></script>
+    <script src="/static/webuploader.js"></script>
+</head>
+<body>
+    <div style="margin:50px 0 0 50px;">
+        <div id="picker" style="float:left;">请选择</div>
+        <div class="progress-bar" role="progressbar"></div>
+    </div>
+    <script type="text/javascript">
+    $(document).ready(function() {
+        WebUploader.Uploader.register({
+            'init': 'init',
+            'before-send-file': 'preupload',    // 文件上传前的回调函数
+            'before-send': 'checkchunk'         // 文件块上传前的回调函数
+        }, {
+            init: function(opts) {
+            },
+            preupload: function (file) {
+                var owner = this.owner,
+                    deferred = WebUploader.Deferred();
+                // 计算文件md5值验证文件的上传进度
+                owner.md5File(file.source, 0, file.size % 20480000 || 20480000).fail(function () {
+                    deferred.reject();
+                }).then(function (md5) {
+                    var data = { 'md5': md5, 'name': file.name };
+                    uploader.options.formData.md5 = md5;
+                    $.get('/checkfile/', data, function (res) {
+                        if (res == 'success') {
+                            deferred.resolve();
+                        } else if (res == 'complete') {
+                            owner.skipFile(file);
+                            deferred.resolve();
+                        } else {
+                            file.startChunk = res;
+                            deferred.resolve();
+                        }
+                    });
+                })
+                return deferred.promise();
+            },
+            checkchunk: function (block) {
+                // 判断该块是否已经上传过了
+                var blob = block.blob.getSource(),
+                    deferred = WebUploader.Deferred();
+                // setTimeout(function() {
+                    if (block.chunk < block.file.startChunk) {
+                        deferred.reject();
+                    } else {
+                        deferred.resolve();
+                    }
+                // }, 5)
+
+                return deferred.promise();
+            }
+        });
+        var uploader = WebUploader.create({
+            swf: '/static/webuploader/Uploader.swf',    // SWF文件，当使用Flash运行时需要引入。
+            server: '/uploadfile/',     // 上传文件的服务器地址
+            pick: {
+                id: '#picker',      // 指定选择文件的按钮容器
+                multiple: false     // 是否开起同时选择多个文件能力
+            },
+            auto: true,     // 有文件选择即开始上传
+            chunked: true,  // 是否要分片处理大文件上传
+            chunkSize: 5 * 1024 * 1024,     // 如果要分片，分多大一片？ 默认大小为5M
+            chunkRetry: 3,      // 如果某个分片由于网络问题出错，允许自动重传多少次
+            threads: 1,     // 上传并发数
+            duplicate: true,    // 去重
+            sendAsBinary: true  //是否已二进制的流的方式发送文件
+        });
+        uploader.on('startUpload', function() {
+            $('.progress-bar').text('0%');
+        });
+        uploader.on('uploadProgress', function(file, percentage) {
+            var num = Math.floor(percentage * 100);
+            $('.progress-bar').text(num + '%');
+        });
+        uploader.on('uploadSuccess', function(file) {
+            var data = { 'md5': this.options.formData.md5, 'filename': file.source['name'] };
+            $.get('/success/', data);
+            $('.progress-bar').text('100%');
+            $('.progress-bar').text('上传完成');
+        });
+        uploader.on('uploadError', function(file) {
+            $('.progress-bar').text('上传失败');
+        });
+        uploader.on('uploadComplete', function(file) {
+        });
+        $('#progress').hide();
+    });
+    </script>
+</body>
+</html>
